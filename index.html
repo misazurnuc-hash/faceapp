@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>FaceScore — анализ лица</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --bg2: #13131a;
+    --bg3: #1c1c26;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.13);
+    --text: #f0f0f5;
+    --muted: rgba(240,240,245,0.45);
+    --hint: rgba(240,240,245,0.25);
+    --gold: #c9a84c;
+    --gold2: #e8c96a;
+    --gold-bg: rgba(201,168,76,0.1);
+    --green: #4caf82;
+    --green-bg: rgba(76,175,130,0.1);
+    --red: #e05c5c;
+    --accent: #7b6ef6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; overflow-x: hidden; }
+  body { min-height: 100vh; }
+
+  /* SPLASH */
+  #splash {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+    z-index: 100; transition: opacity 0.4s;
+  }
+  .splash-logo { font-family: 'Syne', sans-serif; font-size: 32px; font-weight: 700; color: var(--gold2); letter-spacing: -1px; }
+  .splash-sub { font-size: 13px; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; }
+  .splash-ring {
+    width: 60px; height: 60px; border-radius: 50%;
+    border: 2px solid var(--border2); border-top-color: var(--gold);
+    animation: spin 1s linear infinite; margin-bottom: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* LAYOUT */
+  .screen { display: none; flex-direction: column; min-height: 100vh; padding: 0 0 32px; animation: fadeUp 0.35s ease; }
+  .screen.active { display: flex; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* HEADER */
+  .header { padding: 20px 20px 0; display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 700; color: var(--gold2); letter-spacing: -0.5px; }
+  .logo span { color: var(--muted); font-weight: 400; }
+  .back-btn { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border2); background: var(--bg2); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); font-size: 16px; }
+  .back-btn:active { background: var(--bg3); }
+
+  /* UPLOAD SCREEN */
+  .hero { padding: 32px 20px 24px; text-align: center; }
+  .hero h1 { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 700; line-height: 1.2; margin-bottom: 10px; }
+  .hero h1 em { font-style: normal; color: var(--gold2); }
+  .hero p { font-size: 14px; color: var(--muted); line-height: 1.6; }
+
+  .upload-area {
+    margin: 0 20px;
+    border: 1.5px dashed var(--border2);
+    border-radius: 20px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--bg2);
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .upload-area::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 0%, rgba(201,168,76,0.06), transparent 70%);
+    pointer-events: none;
+  }
+  .upload-area:active { border-color: var(--gold); background: var(--bg3); }
+  .upload-icon { font-size: 48px; margin-bottom: 12px; }
+  .upload-area h3 { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .upload-area p { font-size: 13px; color: var(--muted); }
+  #fileInput { display: none; }
+
+  .tips { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 20px 0; }
+  .tip { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+  .tip-icon { font-size: 22px; margin-bottom: 6px; }
+  .tip h4 { font-size: 12px; font-weight: 500; margin-bottom: 3px; }
+  .tip p { font-size: 11px; color: var(--muted); line-height: 1.4; }
+
+  /* MARKUP SCREEN */
+  .mode-switch { display: flex; margin: 16px 20px; background: var(--bg2); border-radius: 12px; padding: 4px; border: 1px solid var(--border); }
+  .mode-btn { flex: 1; padding: 8px; border-radius: 9px; text-align: center; font-size: 13px; cursor: pointer; color: var(--muted); transition: all 0.2s; font-family: 'DM Sans', sans-serif; }
+  .mode-btn.active { background: var(--bg3); color: var(--text); border: 1px solid var(--border2); }
+
+  .canvas-container { margin: 0 20px; position: relative; border-radius: 16px; overflow: hidden; border: 1px solid var(--border2); background: var(--bg2); }
+  #photoCanvas { display: block; width: 100%; cursor: crosshair; touch-action: none; }
+
+  .instr-bar { margin: 12px 20px; background: var(--gold-bg); border: 1px solid rgba(201,168,76,0.2); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--gold2); display: flex; align-items: center; gap: 8px; }
+  .instr-bar span { font-size: 16px; }
+
+  .points-list { margin: 0 20px; display: flex; flex-direction: column; gap: 6px; }
+  .point-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; transition: all 0.15s; }
+  .point-row.active { border-color: var(--gold); background: var(--gold-bg); }
+  .point-row.placed { border-color: rgba(76,175,130,0.3); background: var(--green-bg); }
+  .point-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border2); flex-shrink: 0; }
+  .point-row.active .point-dot { background: var(--gold); }
+  .point-row.placed .point-dot { background: var(--green); }
+  .point-label { font-size: 13px; flex: 1; }
+  .point-row.placed .point-label { color: var(--green); }
+  .point-check { font-size: 14px; color: var(--green); }
+
+  .action-bar { margin: 16px 20px 0; display: flex; gap: 10px; }
+  .btn-outline { flex: 1; padding: 12px; border-radius: 14px; border: 1px solid var(--border2); background: var(--bg2); color: var(--muted); font-size: 14px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
+  .btn-outline:active { background: var(--bg3); }
+  .btn-primary { flex: 2; padding: 12px; border-radius: 14px; border: none; background: var(--gold); color: #0a0a0f; font-size: 14px; font-weight: 600; cursor: pointer; font-family: 'Syne', sans-serif; transition: all 0.15s; }
+  .btn-primary:active { background: var(--gold2); transform: scale(0.98); }
+  .btn-primary:disabled { background: var(--bg3); color: var(--hint); cursor: not-allowed; transform: none; }
+
+  .progress-bar-wrap { margin: 10px 20px 0; height: 3px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
+  .progress-bar-fill { height: 100%; background: var(--gold); border-radius: 2px; transition: width 0.3s ease; }
+  .progress-text { margin: 6px 20px 0; font-size: 11px; color: var(--hint); text-align: right; }
+
+  /* LOADING SCREEN */
+  #loadingScreen { align-items: center; justify-content: center; gap: 0; }
+  .loading-wrap { text-align: center; padding: 40px 20px; }
+  .loading-orb {
+    width: 80px; height: 80px; border-radius: 50%;
+    border: 2px solid var(--border); border-top-color: var(--gold); border-right-color: var(--gold2);
+    animation: spin 1.2s linear infinite; margin: 0 auto 24px;
+  }
+  .loading-wrap h2 { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+  .loading-wrap p { font-size: 13px; color: var(--muted); }
+  .loading-steps { margin-top: 32px; display: flex; flex-direction: column; gap: 10px; max-width: 240px; margin-left: auto; margin-right: auto; }
+  .loading-step { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--hint); transition: color 0.3s; }
+  .loading-step.done { color: var(--green); }
+  .loading-step.active { color: var(--text); }
+  .step-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+  /* RESULTS SCREEN */
+  .overall-hero {
+    margin: 20px 20px 0;
+    background: var(--bg2);
+    border: 1px solid rgba(201,168,76,0.2);
+    border-radius: 20px;
+    padding: 24px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .overall-hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 0%, rgba(201,168,76,0.08), transparent 60%);
+    pointer-events: none;
+  }
+  .overall-score-num { font-family: 'Syne', sans-serif; font-size: 72px; font-weight: 700; color: var(--gold2); line-height: 1; margin-bottom: 4px; }
+  .overall-score-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+  .verdict-text { font-size: 15px; color: var(--text); line-height: 1.5; }
+
+  .scores-section { margin: 16px 20px 0; display: flex; flex-direction: column; gap: 10px; }
+  .score-item { background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
+  .score-item-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .score-item-name { font-size: 14px; font-weight: 500; }
+  .score-item-val { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700; }
+  .score-item-val.high { color: var(--green); }
+  .score-item-val.mid { color: var(--gold2); }
+  .score-item-val.low { color: var(--red); }
+  .score-bar { height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; margin-bottom: 8px; }
+  .score-bar-fill { height: 100%; border-radius: 2px; transition: width 0.8s cubic-bezier(0.16,1,0.3,1); }
+  .score-bar-fill.high { background: var(--green); }
+  .score-bar-fill.mid { background: var(--gold); }
+  .score-bar-fill.low { background: var(--red); }
+  .score-comment { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+  .result-actions { margin: 20px 20px 0; display: flex; gap: 10px; }
+
+  /* SCROLLABLE POINTS */
+  .points-scroll { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-bottom: 4px; }
+  .points-scroll::-webkit-scrollbar { width: 3px; }
+  .points-scroll::-webkit-scrollbar-track { background: transparent; }
+  .points-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- SPLASH -->
+<div id="splash">
+  <div class="splash-ring"></div>
+  <div class="splash-logo">FaceScore</div>
+  <div class="splash-sub">AI · Анализ лица</div>
+</div>
+
+<!-- UPLOAD SCREEN -->
+<div class="screen" id="uploadScreen">
+  <div class="header">
+    <div class="logo">Face<span>Score</span></div>
+  </div>
+  <div class="hero">
+    <h1>Узнай оценку<br>своего <em>лица</em></h1>
+    <p>AI анализирует пропорции по золотому<br>сечению и правилу третей</p>
+  </div>
+  <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+    <div class="upload-icon">📸</div>
+    <h3>Загрузить фото</h3>
+    <p>Анфас или профиль · чёткое освещение</p>
+  </div>
+  <input type="file" id="fileInput" accept="image/*" capture="user">
+  <div class="tips">
+    <div class="tip">
+      <div class="tip-icon">💡</div>
+      <h4>Хорошее фото</h4>
+      <p>Прямой взгляд, ровное освещение, без очков</p>
+    </div>
+    <div class="tip">
+      <div class="tip-icon">📐</div>
+      <h4>Как работает</h4>
+      <p>Ставишь точки на черты лица, AI считает пропорции</p>
+    </div>
+    <div class="tip">
+      <div class="tip-icon">🔒</div>
+      <h4>Приватность</h4>
+      <p>Фото не сохраняется, всё обрабатывается локально</p>
+    </div>
+    <div class="tip">
+      <div class="tip-icon">⚡</div>
+      <h4>Быстро</h4>
+      <p>Результат за 10–15 секунд</p>
+    </div>
+  </div>
+</div>
+
+<!-- MARKUP SCREEN -->
+<div class="screen" id="markupScreen">
+  <div class="header">
+    <div class="logo">Face<span>Score</span></div>
+    <div class="back-btn" onclick="resetApp()">✕</div>
+  </div>
+  <div class="mode-switch">
+    <div class="mode-btn active" onclick="switchMode('frontal')" id="modeFrontal">Анфас</div>
+    <div class="mode-btn" onclick="switchMode('profile')" id="modeProfile">Профиль</div>
+  </div>
+  <div class="canvas-container">
+    <canvas id="photoCanvas"></canvas>
+  </div>
+  <div class="instr-bar">
+    <span>👆</span>
+    <div id="instrText">Выбери точку и тапни на фото</div>
+  </div>
+  <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progressFill" style="width:0%"></div></div>
+  <div class="progress-text" id="progressText">0 / 15 точек</div>
+  <div class="points-list">
+    <div class="points-scroll" id="pointsList"></div>
+  </div>
+  <div class="action-bar">
+    <button class="btn-outline" onclick="clearPoints()">Сброс</button>
+    <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Анализировать →</button>
+  </div>
+</div>
+
+<!-- LOADING SCREEN -->
+<div class="screen" id="loadingScreen">
+  <div class="loading-wrap">
+    <div class="loading-orb"></div>
+    <h2>Анализируем лицо</h2>
+    <p id="loadingSubtext">Считаем пропорции...</p>
+    <div class="loading-steps">
+      <div class="loading-step" id="lstep1"><div class="step-dot"></div> Измерение расстояний</div>
+      <div class="loading-step" id="lstep2"><div class="step-dot"></div> Расчёт золотого сечения</div>
+      <div class="loading-step" id="lstep3"><div class="step-dot"></div> Оценка симметрии</div>
+      <div class="loading-step" id="lstep4"><div class="step-dot"></div> Составление отчёта</div>
+    </div>
+  </div>
+</div>
+
+<!-- RESULTS SCREEN -->
+<div class="screen" id="resultsScreen">
+  <div class="header">
+    <div class="logo">Face<span>Score</span></div>
+    <div class="back-btn" onclick="resetApp()">✕</div>
+  </div>
+  <div class="overall-hero">
+    <div class="overall-score-num" id="overallNum">—</div>
+    <div class="overall-score-label">общая оценка / 10</div>
+    <div class="verdict-text" id="verdictText"></div>
+  </div>
+  <div class="scores-section" id="scoresSection"></div>
+  <div class="result-actions">
+    <button class="btn-outline" onclick="goBackToMarkup()">← Изменить точки</button>
+    <button class="btn-primary" onclick="resetApp()">Новое фото</button>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────
+const GEMINI_API_KEY = 'REPLACE_WITH_YOUR_KEY';
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+// ── TELEGRAM INIT ────────────────────────────────────────
+const tg = window.Telegram?.WebApp;
+if(tg) { tg.ready(); tg.expand(); }
+
+setTimeout(() => {
+  document.getElementById('splash').style.opacity = '0';
+  setTimeout(() => { document.getElementById('splash').style.display = 'none'; }, 400);
+  showScreen('uploadScreen');
+}, 1200);
+
+// ── LANDMARKS ───────────────────────────────────────────
+const LM_FRONTAL = [
+  {id:'hairline',   label:'Линия волос',       color:'#c9a84c'},
+  {id:'glabella',   label:'Переносица',         color:'#c9a84c'},
+  {id:'nasal_tip',  label:'Кончик носа',        color:'#7b6ef6'},
+  {id:'subnasale',  label:'Основание носа',     color:'#7b6ef6'},
+  {id:'lip_top',    label:'Верхняя губа',       color:'#e05c5c'},
+  {id:'lip_bottom', label:'Нижняя губа',        color:'#e05c5c'},
+  {id:'chin',       label:'Подбородок',         color:'#e8a84c'},
+  {id:'eye_left',   label:'Левый глаз (центр)', color:'#4caf82'},
+  {id:'eye_right',  label:'Правый глаз (центр)',color:'#4caf82'},
+  {id:'brow_left',  label:'Левая бровь',        color:'#4caf82'},
+  {id:'brow_right', label:'Правая бровь',       color:'#4caf82'},
+  {id:'cheek_left', label:'Левая скула',        color:'#e8a84c'},
+  {id:'cheek_right',label:'Правая скула',       color:'#e8a84c'},
+  {id:'jaw_left',   label:'Угол челюсти (лево)',color:'#e05c5c'},
+  {id:'jaw_right',  label:'Угол челюсти (право)',color:'#e05c5c'},
+];
+const LM_PROFILE = [
+  {id:'forehead',    label:'Лоб',              color:'#c9a84c'},
+  {id:'nose_bridge', label:'Мост носа',        color:'#7b6ef6'},
+  {id:'nasal_tip',   label:'Кончик носа',      color:'#7b6ef6'},
+  {id:'upper_lip',   label:'Верхняя губа',     color:'#e05c5c'},
+  {id:'lower_lip',   label:'Нижняя губа',      color:'#e05c5c'},
+  {id:'chin_p',      label:'Подбородок',       color:'#e8a84c'},
+  {id:'ear_top',     label:'Верх уха',         color:'#4caf82'},
+  {id:'ear_lobe',    label:'Мочка уха',        color:'#4caf82'},
+  {id:'neck_front',  label:'Передняя шея',     color:'#c9a84c'},
+  {id:'occiput',     label:'Затылок',          color:'#e8a84c'},
+];
+
+let currentMode = 'frontal';
+let landmarks = {};
+let activeLandmark = null;
+let canvasScale = 1;
+let savedImageData = null;
+
+const canvas = document.getElementById('photoCanvas');
+const ctx = canvas.getContext('2d');
+const img = new Image();
+
+// ── SCREENS ──────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ── FILE INPUT ────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    savedImageData = ev.target.result;
+    img.onload = () => {
+      const maxW = window.innerWidth - 40;
+      const maxH = 300;
+      const ratio = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
+      canvas.width  = Math.round(img.naturalWidth * ratio);
+      canvas.height = Math.round(img.naturalHeight * ratio);
+      canvasScale = ratio;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      landmarks = {};
+      activeLandmark = null;
+      renderPoints();
+      updateProgress();
+      showScreen('markupScreen');
+      const lms = getLMs();
+      selectLandmark(lms[0].id);
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+});
+
+function getLMs() { return currentMode === 'frontal' ? LM_FRONTAL : LM_PROFILE; }
+
+function switchMode(m) {
+  currentMode = m;
+  document.getElementById('modeFrontal').classList.toggle('active', m==='frontal');
+  document.getElementById('modeProfile').classList.toggle('active', m==='profile');
+  landmarks = {}; activeLandmark = null;
+  renderPoints(); redrawCanvas(); updateProgress();
+  selectLandmark(getLMs()[0].id);
+}
+
+function selectLandmark(id) {
+  activeLandmark = id;
+  renderPoints();
+  const lm = getLMs().find(l => l.id === id);
+  document.getElementById('instrText').textContent = lm ? `Тапни на: ${lm.label}` : 'Тапни на фото';
+}
+
+function renderPoints() {
+  const list = document.getElementById('pointsList');
+  list.innerHTML = '';
+  getLMs().forEach(lm => {
+    const placed = !!landmarks[lm.id];
+    const active = activeLandmark === lm.id;
+    const div = document.createElement('div');
+    div.className = 'point-row' + (active?' active':'') + (placed?' placed':'');
+    div.innerHTML = `<div class="point-dot"></div><span class="point-label">${lm.label}</span>${placed?'<span class="point-check">✓</span>':''}`;
+    div.onclick = () => selectLandmark(lm.id);
+    list.appendChild(div);
+  });
+  // scroll active into view
+  setTimeout(() => {
+    const active = list.querySelector('.point-row.active');
+    if(active) active.scrollIntoView({block:'nearest', behavior:'smooth'});
+  }, 50);
+}
+
+function updateProgress() {
+  const placed = Object.keys(landmarks).length;
+  const total = getLMs().length;
+  const pct = total ? (placed/total*100) : 0;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressText').textContent = `${placed} / ${total} точек`;
+  document.getElementById('analyzeBtn').disabled = placed < 5;
+}
+
+// ── CANVAS CLICK ─────────────────────────────────────────
+function getCanvasCoords(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  if(e.touches) {
+    return { x: (e.touches[0].clientX - rect.left) * scaleX, y: (e.touches[0].clientY - rect.top) * scaleY };
+  }
+  return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+}
+
+function onCanvasTap(e) {
+  e.preventDefault();
+  if(!activeLandmark) return;
+  const {x, y} = getCanvasCoords(e);
+  landmarks[activeLandmark] = {x, y};
+  const lms = getLMs();
+  const idx = lms.findIndex(l => l.id === activeLandmark);
+  const next = lms[idx+1];
+  activeLandmark = next ? next.id : null;
+  renderPoints(); redrawCanvas(); updateProgress();
+  if(activeLandmark) {
+    const lm = lms.find(l=>l.id===activeLandmark);
+    document.getElementById('instrText').textContent = `Тапни на: ${lm.label}`;
+  } else {
+    document.getElementById('instrText').textContent = 'Все точки расставлены ✓';
+  }
+}
+
+canvas.addEventListener('click', onCanvaTap = onCanvasTap);
+canvas.addEventListener('touchstart', onCanvasTap, {passive:false});
+
+function redrawCanvas() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const lms = getLMs();
+  Object.entries(landmarks).forEach(([id, pt]) => {
+    const lm = lms.find(l=>l.id===id);
+    const color = lm?.color || '#c9a84c';
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 5, 0, Math.PI*2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = 'bold 10px DM Sans, sans-serif';
+    ctx.fillText(lm?.label || id, pt.x + 8, pt.y + 4);
+  });
+}
+
+function clearPoints() {
+  landmarks = {}; activeLandmark = null;
+  renderPoints(); redrawCanvas(); updateProgress();
+  selectLandmark(getLMs()[0].id);
+}
+
+function resetApp() {
+  landmarks = {}; activeLandmark = null; savedImageData = null;
+  showScreen('uploadScreen');
+}
+
+function goBackToMarkup() {
+  showScreen('markupScreen');
+}
+
+// ── LOADING ANIMATION ─────────────────────────────────────
+let loadInterval;
+function startLoadingAnim() {
+  const steps = ['lstep1','lstep2','lstep3','lstep4'];
+  let i = 0;
+  steps.forEach(s => document.getElementById(s).className = 'loading-step');
+  loadInterval = setInterval(() => {
+    if(i > 0) document.getElementById(steps[i-1]).className = 'loading-step done';
+    if(i < steps.length) document.getElementById(steps[i]).className = 'loading-step active';
+    i++;
+    if(i > steps.length) clearInterval(loadInterval);
+  }, 1800);
+}
+
+// ── ANALYSIS ──────────────────────────────────────────────
+async function runAnalysis() {
+  showScreen('loadingScreen');
+  startLoadingAnim();
+
+  const lms = getLMs();
+  const pointsDesc = Object.entries(landmarks).map(([id, pt]) => {
+    const lm = lms.find(l=>l.id===id);
+    return `${lm?.label||id}: x=${Math.round(pt.x / canvasScale)}, y=${Math.round(pt.y / canvasScale)}`;
+  }).join('\n');
+
+  const prompt = `Ты эксперт по эстетике и анализу пропорций лица. Тебе переданы координаты точек на фотографии лица (режим: ${currentMode==='frontal'?'анфас':'профиль'}).
+
+Размер фото: ${Math.round(canvas.width/canvasScale)}x${Math.round(canvas.height/canvasScale)} пикселей
+
+Точки:
+${pointsDesc}
+
+Рассчитай реальные расстояния между точками и оцени параметры по шкале 0–10 используя золотое сечение (1.618) и правило третей.
+
+Верни ТОЛЬКО валидный JSON без markdown:
+{
+  "overall": <число>,
+  "verdict": "<15-20 слов характеристика>",
+  "scores": [
+    {"name": "<название>", "score": <число>, "comment": "<2-3 конкретных предложения с расчётами>"}
+  ]
+}
+
+${currentMode==='frontal'?'Параметры: Симметрия лица, Пропорции третей, Расстояние между глазами, Нос и губы, Ширина челюсти, Золотое сечение':'Параметры: Профиль носа, Выступание губ, Подбородок, Угол лба, Пропорции профиля, Нос и подбородок'}`;
+
+  try {
+    const res = await fetch(GEMINI_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        contents: [{parts: [{text: prompt}]}],
+        generationConfig: {temperature: 0.4, maxOutputTokens: 1200}
+      })
+    });
+    const data = await res.json();
+    clearInterval(loadInterval);
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    let parsed;
+    try {
+      const clean = text.replace(/```json|```/g,'').trim();
+      parsed = JSON.parse(clean);
+    } catch(e) { parsed = null; }
+    showScreen('resultsScreen');
+    renderResults(parsed);
+  } catch(err) {
+    clearInterval(loadInterval);
+    showScreen('markupScreen');
+    alert('Ошибка подключения. Проверь интернет и попробуй снова.');
+  }
+}
+
+function renderResults(data) {
+  if(!data) {
+    document.getElementById('overallNum').textContent = '—';
+    document.getElementById('verdictText').textContent = 'Не удалось распарсить ответ. Попробуй ещё раз.';
+    document.getElementById('scoresSection').innerHTML = '';
+    return;
+  }
+  const overall = parseFloat(data.overall) || 0;
+  document.getElementById('overallNum').textContent = overall.toFixed(1);
+  document.getElementById('verdictText').textContent = data.verdict || '';
+
+  const sec = document.getElementById('scoresSection');
+  sec.innerHTML = '';
+  (data.scores||[]).forEach(s => {
+    const sc = Math.min(10, Math.max(0, parseFloat(s.score)||0));
+    const tier = sc >= 7 ? 'high' : sc >= 5 ? 'mid' : 'low';
+    const pct = (sc/10*100).toFixed(1);
+    const div = document.createElement('div');
+    div.className = 'score-item';
+    div.innerHTML = `
+      <div class="score-item-top">
+        <span class="score-item-name">${s.name}</span>
+        <span class="score-item-val ${tier}">${sc.toFixed(1)}</span>
+      </div>
+      <div class="score-bar"><div class="score-bar-fill ${tier}" style="width:0%" data-w="${pct}"></div></div>
+      <p class="score-comment">${s.comment||''}</p>`;
+    sec.appendChild(div);
+  });
+  // animate bars
+  setTimeout(() => {
+    sec.querySelectorAll('.score-bar-fill').forEach(el => {
+      el.style.width = el.dataset.w + '%';
+    });
+  }, 100);
+}
+</script>
+</body>
+</html>
