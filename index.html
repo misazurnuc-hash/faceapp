@@ -558,7 +558,7 @@ ${currentMode==='frontal'?'Параметры: Симметрия лица, Пр
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     let parsed;
     try {
-      const clean = text.replace(/```json|```/g,'').trim();
+      const clean = text.replace(/```json\n?|```\n?/g,'').replace(/^[^{]*/,'').replace(/[^}]*$/,'').trim();
       parsed = JSON.parse(clean);
     } catch(e) { parsed = null; }
     showScreen('resultsScreen');
